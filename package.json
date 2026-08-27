@@ -1,0 +1,38 @@
+{
+  "name": "node-study",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A topic-by-topic Node.js study project in TypeScript",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.ts",
+    "test:solutions": "node scripts/test.ts --solutions",
+    "m01": "node src/01-modules/index.ts",
+    "m02": "node src/02-event-loop/index.ts",
+    "m03": "node src/03-event-emitter/index.ts",
+    "m04": "node src/04-buffers/index.ts",
+    "m05": "node src/05-streams/index.ts",
+    "m06": "node src/06-filesystem/index.ts",
+    "m07": "node src/07-errors-diagnostics/index.ts",
+    "m08": "node src/08-processes-workers/index.ts",
+    "m09": "node src/09-http/index.ts",
+    "m10": "node src/10-routing-middleware/index.ts",
+    "m11": "node src/11-fastify/index.ts",
+    "m12": "node src/12-config-logging/index.ts",
+    "m13": "node src/13-persistence/index.ts",
+    "m14": "node src/14-auth/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52",
+    "fastify": "^5.12.1",
+    "pino": "^10.3.1"
+  }
+}
