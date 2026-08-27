@@ -38,7 +38,7 @@ Not one at a time. Someone fixing a `.env` file should need one round trip, not 
 
 ### 1.2 Validate once, at the edge
 
-```ts
+```ts ignore
 // ✗ process.env scattered through the codebase
 if (process.env.FEATURE_X === "true") { … }      // in nine files
 
@@ -232,7 +232,7 @@ Path-based and fast. But it is **exact-path matching**. Measured in `06-redactio
 
 So redaction is a **safety net, not a strategy**, and a denylist has to anticipate every field name anyone will ever add. The strategy is an allowlist: log `userId`, not `user`; `hasToken: true`, not the token. A pino **serializer** on a key does this centrally:
 
-```ts
+```ts ignore
 serializers: {
   user: (u) => ({ id: u.id, emailDomain: u.email?.split("@")[1] }),
 }
@@ -262,7 +262,7 @@ Logs cost money and attention. At 1,000 req/s, one `info` line per request is 86
 
 ## 7. Wiring it together
 
-```ts
+```ts ignore
 // config.ts — validated once, at import, before anything else runs
 export const config = loadConfig(process.env);
 

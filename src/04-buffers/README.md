@@ -142,7 +142,7 @@ new Uint8Array(ab)[0];       // 1 — same memory
 
 ## 3. Encodings
 
-```ts
+```ts ignore
 buf.toString(encoding?, start?, end?)
 Buffer.from(str, encoding?)
 Buffer.byteLength(str, encoding?)
@@ -251,7 +251,7 @@ b.toString("hex");            // "78563412"   ← little-endian: reversed
 
 The full family:
 
-```ts
+```ts ignore
 b.readUInt8(offset);       b.writeUInt8(v, offset);
 b.readInt16BE / LE         b.writeInt16BE / LE
 b.readUInt32BE / LE        b.writeUInt32BE / LE
@@ -323,7 +323,7 @@ Sharing is usually what you want — it's free, and it's how streams avoid copyi
 
 ### 5.2 Copying explicitly
 
-```ts
+```ts ignore
 source.copy(target, targetStart?, sourceStart?, sourceEnd?);   // returns bytes copied
 target.set(source, targetOffset);                              // TypedArray standard
 Buffer.from(source);                                           // whole-buffer copy

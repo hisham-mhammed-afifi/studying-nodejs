@@ -153,7 +153,7 @@ err instanceof NotFoundError;   // ✓ works — inside one process
 
 But `instanceof` **breaks across module boundaries** when two copies of a package are installed (module 01 §3.3), and across process/worker boundaries entirely. For anything that crosses a boundary, branch on a **string code**:
 
-```ts
+```ts ignore
 if (err instanceof AppError && err.code === "NOT_FOUND") { ... }   // robust
 ```
 
@@ -274,7 +274,7 @@ function log(msg: string) {
 
 ### 6.1 It survives everything async
 
-```ts
+```ts ignore
 await context.run({ requestId: "req-1" }, async () => {
   context.getStore()?.requestId;        // "req-1"
   await sleep(10);

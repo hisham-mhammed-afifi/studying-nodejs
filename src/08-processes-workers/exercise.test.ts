@@ -6,6 +6,11 @@
 import { describe, it, before, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { pathToFileURL } from "node:url";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 import {
   PoolClosedError,
@@ -15,7 +20,8 @@ import {
   type PoolStats,
 } from "./exercise.ts";
 
-const modulePath = process.env["IMPL"] === "solution" ? "./solution.ts" : "./exercise.ts";
+const useSolution = process.env["IMPL"] === "solution";
+const modulePath = useSolution ? "./solution.ts" : "./exercise.ts";
 const WORKER = path.join(import.meta.dirname, "_test-worker.ts");
 
 interface Pool {
@@ -296,14 +302,63 @@ describe("WorkerPool — close", () => {
     assert.ok((await hung) instanceof Error, "the hung task should have been rejected");
   });
 
-  it("leaves no live handles (the process could exit)", async () => {
-    const pool = makePool({ size: 2 });
-    await pool.run({ op: "echo", value: 1 });
-    await pool.close();
-    await sleep(50);
-    const handles = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles();
-    const workerish = handles.filter((h) => h?.constructor?.name === "Worker");
-    assert.equal(workerish.length, 0, "workers still alive after close()");
+  it("leaves no live handles — a child process actually EXITS after close()", async () => {
+    // The honest way to ask "does this keep the process alive?" is to run it
+    // in a real process and see whether that process exits.
+    //
+    // The obvious shortcut does NOT work: a live Worker appears in neither
+    // process._getActiveHandles() nor process.getActiveResourcesInfo(), so a
+    // test built on either passes whether or not close() terminated anything.
+    // (Module 02 can use getActiveResourcesInfo because TIMERS do show up
+    // there. Workers do not. Verified on Node 22.)
+    //
+    // A child that exits on its own is unfakeable: if any worker survived
+    // close(), its message port holds the loop open and the child hangs.
+    // A real .mjs file in the OS temp dir, NOT `node --input-type=module -e`:
+    // a Worker inherits the parent's execArgv, and --input-type=module makes
+    // the worker's own file entry fail with ERR_INPUT_TYPE_NOT_ALLOWED. A
+    // plain file needs no flags. (Absolute file:// URL for the same reason
+    // the temp dir is outside the project — no relative resolution to get
+    // wrong, and nothing written into the repo.)
+    const implUrl = pathToFileURL(path.join(import.meta.dirname, modulePath)).href;
+    const dir = await mkdtemp(path.join(tmpdir(), "pool-exit-"));
+    const scriptPath = path.join(dir, "child.mjs");
+    await writeFile(
+      scriptPath,
+      `const { WorkerPool } = await import(${JSON.stringify(implUrl)});
+       const pool = new WorkerPool(${JSON.stringify(WORKER)}, { size: 2 });
+       await pool.run({ op: "echo", value: 1 });
+       await pool.close();
+       console.log("CLOSED");
+       // No process.exit() — exiting naturally IS the assertion.
+      `,
+    );
+
+    try {
+      const child = spawn(process.execPath, ["--no-warnings", scriptPath], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let out = "";
+      child.stdout.on("data", (c: Buffer) => (out += c));
+      child.stderr.on("data", (c: Buffer) => (out += c));
+
+      // Generous: we distinguish "exits" from "never exits", not timing.
+      const killer = setTimeout(() => child.kill("SIGKILL"), 15_000);
+      const [code, signal] = (await once(child, "exit")) as [number | null, NodeJS.Signals | null];
+      clearTimeout(killer);
+
+      assert.match(out, /CLOSED/, `the pool never finished closing. Output:\n${out}`);
+      assert.equal(
+        signal,
+        null,
+        "the child had to be SIGKILLed — close() left a worker alive, so the " +
+          `process could never exit. Output:\n${out}`,
+      );
+      assert.equal(code, 0, `child exited with ${code}. Output:\n${out}`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

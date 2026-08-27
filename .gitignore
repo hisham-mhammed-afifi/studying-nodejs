@@ -3,3 +3,7 @@ dist/
 *.log
 .tmp/
 .DS_Store
+
+# scratch dir used by scripts/check-readme.ts (removed on exit, but
+# left behind if the process is killed mid-run)
+.readme-check/

@@ -172,13 +172,39 @@ describe("createLagMonitor", () => {
   });
 
   it("does not keep the process alive", async () => {
-    // A monitor whose timer is not unref'd would hold the loop open. We check
-    // the handle count instead of actually exiting.
-    const before = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles().length;
+    // A monitor whose timer is not unref'd holds the event loop open forever.
+    //
+    // NOT process._getActiveHandles(): on Node 22 that list contains only
+    // socket-type handles. Ten ref'd setIntervals show up as ZERO entries, so
+    // a test written against it passes whether or not .unref() was called.
+    //
+    // process.getActiveResourcesInfo() (public, stable since Node 17) is the
+    // one that discriminates: it COUNTS ref'd timers and EXCLUDES unref'd ones,
+    // which is exactly the question being asked.
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+
+    const before = timers();
     const m = impl.createLagMonitor(1000);
-    const during = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles().length;
+    const during = timers();
     m.stop();
-    assert.equal(during, before, "monitor added a ref'd handle — call .unref()");
+
+    assert.equal(
+      during,
+      before,
+      "the monitor's interval is ref'd and would hold the process open — call timer.unref()",
+    );
+  });
+
+  it("...and the check above can actually fail", () => {
+    // Guards the guard. If this ever stops failing, the assertion above has
+    // silently become a no-op again and the whole test is decoration.
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+    const before = timers();
+    const leaked = setInterval(() => {}, 1000); // deliberately NOT unref'd
+    assert.equal(timers(), before + 1, "getActiveResourcesInfo must see a ref'd timer");
+    leaked.unref();
+    assert.equal(timers(), before, "...and must stop seeing it once unref'd");
+    clearInterval(leaked);
   });
 });
 
@@ -221,8 +247,15 @@ describe("processCooperatively", () => {
   it("lets timers fire during a long run", async () => {
     let ticks = 0;
     const timer = setInterval(() => ticks++, 5);
-    await impl.processCooperatively(bigInput, heavy, 5);
-    clearInterval(timer);
+    // finally, not a bare call: if processCooperatively throws — which it does
+    // for every unimplemented exercise — a plain clearInterval() below is never
+    // reached, and this ref'd interval keeps the TEST RUNNER alive forever.
+    // That is 03-lies.ts §4 happening inside our own suite.
+    try {
+      await impl.processCooperatively(bigInput, heavy, 5);
+    } finally {
+      clearInterval(timer);
+    }
     assert.ok(ticks > 3, `timer only ticked ${ticks} times — the loop was starved`);
   });
 

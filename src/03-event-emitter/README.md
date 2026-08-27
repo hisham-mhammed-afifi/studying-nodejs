@@ -201,7 +201,7 @@ This is cheap insurance. It does **not** make `emit()` wait for the listeners.
 
 ### 3.2 If you need to await handlers, don't use an emitter
 
-```ts
+```ts ignore
 // ✗ the emitter cannot do this
 bus.emit("beforeSave");
 await ???

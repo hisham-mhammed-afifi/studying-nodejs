@@ -419,7 +419,7 @@ From `04-blocking.ts` on a typical machine:
 
 ### 6.4 Common blockers, in order of how often they bite
 
-```ts
+```ts ignore
 // 1. Large JSON. The most common by far.
 JSON.parse(hugeBody);              // → stream, paginate, cap body size
 

@@ -112,7 +112,7 @@ const active = row.active === 1;
 
 ### 3.2 ⚠ Rows are null-prototype objects
 
-```ts
+```ts ignore
 const row = stmt.get();
 Object.getPrototypeOf(row) === null;   // true
 row instanceof Object;                 // false

@@ -20,8 +20,12 @@ node src/01-modules/01-esm-vs-cjs.ts
 Typecheck everything:
 
 ```bash
-npm run typecheck
+npm run typecheck      # src/ and scripts/
+npm run check:readme   # the ~2,000 lines of TypeScript inside the READMEs
+npm run check          # typecheck + readme + the full solution suite
 ```
+
+`check:readme` exists because `tsc` does not look inside markdown, and the code in these READMEs is what you read first. It extracts every ` ```ts ` block and enforces one rule: **it has to be code Node could actually run** — no parse errors, and nothing `erasableSyntaxOnly` forbids. It does *not* demand snippets typecheck standalone, since they are deliberately fragments. A block that is illustrative rather than runnable opts out with ` ```ts ignore `.
 
 Run the exercise tests:
 

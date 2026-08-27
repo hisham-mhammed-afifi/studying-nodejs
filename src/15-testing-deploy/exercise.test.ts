@@ -6,7 +6,7 @@
  */
 
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import { createServer, get, Agent, type Server } from "node:http";
 import { once } from "node:events";
 import type {
@@ -167,6 +167,27 @@ describe("Task 2 — Readiness", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Task 3 — drain", () => {
+  // Every server and agent scenario() hands out, so they can be torn down even
+  // when the test never reaches its own cleanup.
+  //
+  // Why this matters: each test here calls impl.drain(), which THROWS for an
+  // unimplemented exercise — the state every learner starts in. Without this,
+  // four listening servers survive the run, the event loop never empties, and
+  // `npm test` hangs forever with no output. Measured before this was added:
+  // 40s+ and killed, versus ~250ms for every other module.
+  const opened: Array<{ server: Server; agent: Agent }> = [];
+
+  afterEach(async () => {
+    for (const { server, agent } of opened.splice(0)) {
+      agent.destroy();
+      // closeAllConnections() first: close() alone waits for the keep-alive
+      // socket this fixture deliberately opens, which is the very stall
+      // 05-shutdown.ts measures at 6814ms.
+      server.closeAllConnections();
+      if (server.listening) await new Promise((r) => server.close(r));
+    }
+  });
+
   /** A server whose handler takes `ms`, plus a keep-alive client. */
   async function scenario(handlerMs: number) {
     const server = createServer((_req, res) => setTimeout(() => res.end("ok"), handlerMs));
@@ -174,6 +195,7 @@ describe("Task 3 — drain", () => {
     await once(server, "listening");
     const { port } = server.address() as { port: number };
     const agent = new Agent({ keepAlive: true });
+    opened.push({ server, agent });
 
     let client = "pending";
     const request = new Promise<void>((resolve) => {
@@ -234,16 +256,47 @@ describe("Task 3 — drain", () => {
   });
 
   it("leaves no handle holding the event loop open", async () => {
+    // A 60s deadline timer that was neither cleared nor unref'd keeps this
+    // process alive for a minute after the tests finish — the leak from
+    // 03-lies.ts §4, in the very code written to prevent it.
+    //
+    // NOT process._getActiveHandles(): on Node 22 it reports only socket-type
+    // handles, so ten ref'd setIntervals appear as ZERO entries. A leak test
+    // built on it passes no matter how badly the implementation leaks. Use
+    // process.getActiveResourcesInfo(), which counts ref'd timers and excludes
+    // unref'd ones — the exact distinction being tested.
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+
     const { server, agent } = await scenario(10);
+    const before = timers();
+
+    // A deliberately long deadline: if drain() leaves it ref'd, it is still
+    // counted here — and would still be pending 60 seconds from now.
     await impl.drain(server, { sweepMs: 20, deadlineMs: 60_000 });
     agent.destroy();
 
-    // A 60s deadline timer that was not unref'd (or not cleared) would keep
-    // this process alive for a minute after the tests finish — the leak from
-    // 03-lies.ts §4, in the very code meant to prevent it.
-    const handles = (process as unknown as { _getActiveHandles(): unknown[] })._getActiveHandles();
-    const timers = handles.filter((h) => h?.constructor?.name === "Timeout");
-    assert.ok(timers.length < 5, `suspicious number of live timers: ${timers.length}`);
+    // Note what this does and does not catch. drain() has TWO safety nets —
+    // clearing the timers in its close callback, and .unref()ing them — and
+    // either one alone prevents the process being held open. So this fails
+    // only when BOTH are missing, which is exactly right: the requirement is
+    // "no timer holds the loop open", not "call these two specific methods".
+    assert.equal(
+      timers(),
+      before,
+      "drain() left a ref'd timer pending — clear the sweep and deadline when it " +
+        "finishes, and .unref() both so a pending one cannot hold the process open",
+    );
+  });
+
+  it("...and the check above can actually fail", () => {
+    // Guards the guard: if this stops failing, the assertion above has
+    // silently become a no-op again.
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+    const before = timers();
+    const leaked = setTimeout(() => {}, 60_000); // ref'd: exactly drain()'s bug
+    assert.equal(timers(), before + 1, "getActiveResourcesInfo must see a ref'd timer");
+    clearTimeout(leaked);
+    assert.equal(timers(), before, "...and must stop seeing it once cleared");
   });
 });
 
@@ -372,8 +425,13 @@ describe("all four together — the real shutdown path", () => {
     port = (server.address() as { port: number }).port;
   });
 
-  after(() => {
-    if (server.listening) server.close();
+  after(async () => {
+    // closeAllConnections() before close(): the test above leaves a keep-alive
+    // socket open, and close() on its own waits it out — 05-shutdown.ts §2
+    // measures exactly that stall. Without this the file hangs when drain()
+    // is unimplemented and never closed the server itself.
+    server.closeAllConnections();
+    if (server.listening) await new Promise((r) => server.close(r));
   });
 
   it("readiness flips first, in-flight requests survive, nothing new is accepted", async () => {

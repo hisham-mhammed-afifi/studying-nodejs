@@ -309,12 +309,20 @@ const pipelineStage = compose(splitLines(), parseJson());   // one reusable Dupl
 ```ts
 class Counter extends Readable {
   #n = 0;
-  constructor(private max: number) {
+  readonly #max: number;
+
+  // NOT `constructor(private max: number)`. A parameter property needs
+  // codegen, and Node only ERASES types — that line is a hard
+  // ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX at load time (root README, "Why no
+  // bundler?"; `erasableSyntaxOnly` in tsconfig.json flags it for you).
+  constructor(max: number) {
     super({ objectMode: true });
+    this.#max = max;
   }
+
   // Called when the consumer wants more. Push until push() returns false.
   override _read(): void {
-    if (this.#n >= this.max) {
+    if (this.#n >= this.#max) {
       this.push(null);          // null = EOF
       return;
     }
@@ -398,7 +406,7 @@ In object mode chunks are arbitrary values, `highWaterMark` counts items (defaul
 
 ⚠ **`null` is the EOF sentinel, so you can never push `null` as a value.** This is nastier than it sounds, because it fails *silently*:
 
-```ts
+```ts ignore
 // An NDJSON parser. "null" is legal JSON!
 transform(line, _enc, cb) { cb(null, JSON.parse(line)); }
 ```

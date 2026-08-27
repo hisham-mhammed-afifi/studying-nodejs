@@ -9,6 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "check:readme": "node scripts/check-readme.ts",
+    "check": "npm run typecheck && npm run check:readme && npm run test:solutions",
     "test": "node scripts/test.ts",
     "test:solutions": "node scripts/test.ts --solutions",
     "m01": "node src/01-modules/index.ts",

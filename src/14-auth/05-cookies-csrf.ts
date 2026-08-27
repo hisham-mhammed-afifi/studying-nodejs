@@ -103,10 +103,24 @@ function parseCookies(header: string | undefined): Map<string, string> {
     const eq = pair.indexOf("=");
     if (eq < 1) continue; // no "=", or a name of length 0
     const name = pair.slice(0, eq).trim();
-    const value = pair.slice(eq + 1).trim();
+    const raw = pair.slice(eq + 1).trim();
+
+    // decodeURIComponent THROWS a URIError on malformed input — and "Cookie"
+    // is a header the client fully controls. Unguarded, `Cookie: x=100%`
+    // is an unhandled exception in the request listener, which takes the
+    // whole PROCESS down (module 10 §1.6). Not a 500: a crash.
+    let value = raw;
+    try {
+      value = decodeURIComponent(raw);
+    } catch {
+      // Keep the raw bytes. A cookie we cannot decode is a cookie that will
+      // not match anything, which is the correct outcome — the request just
+      // fails auth instead of killing the server.
+    }
+
     // FIRST wins. A duplicate name (set by a subdomain, or on a different
     // path) must not silently override the real one.
-    if (!out.has(name)) out.set(name, decodeURIComponent(value));
+    if (!out.has(name)) out.set(name, value);
   }
   return out;
 }
@@ -114,14 +128,32 @@ function parseCookies(header: string | undefined): Map<string, string> {
 const messy = "theme=dark; __Host-session=abc%3Ddef; __Host-session=EVIL; ; malformed; a=b=c";
 console.log(`  raw: ${messy}`);
 for (const [k, v] of parseCookies(messy)) console.log(`    ${k.padEnd(16)} ${v}`);
+
+// The one that bites hardest, because it is a CRASH and not a bad value.
+console.log(`\n  hostile input:`);
+for (const hostile of ["csrf=100%", "a=%E0%A4%A", "x=%zz"]) {
+  const parsed = parseCookies(hostile);
+  console.log(`    ${hostile.padEnd(14)} → ${JSON.stringify([...parsed])}   (still alive)`);
+}
+
 console.log(`
-  Three things that trip people up:
+  Four things that trip people up:
     • the header is one string, ";"-separated — split it yourself or use
       a library, but do not regex for one name (a cookie called
       "not-session" contains "session")
     • duplicates are LEGAL. Take the first, or reject the request outright.
     • a value may contain "=" (base64 padding), so split on the FIRST "="
       only — "a=b=c" is a="b=c", not a="b"
+    • decodeURIComponent THROWS on malformed input, and Cookie is fully
+      attacker-controlled. Unguarded, this line:
+
+        out.set(name, decodeURIComponent(value));   // ✗
+
+      turns "Cookie: x=100%" into an uncaught URIError inside the request
+      listener — which does not return a 500, it KILLS THE PROCESS. One
+      header, no authentication, every worker in a restart loop.
+
+      Try it: delete the try/catch above and re-run this file.
 `);
 
 // ─────────────────────────────────────────────────────────────────────────────
