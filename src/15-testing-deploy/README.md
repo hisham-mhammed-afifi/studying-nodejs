@@ -189,6 +189,21 @@ Two flags change the symptom. `--test-timeout=5000` turns the hang into a failur
 
 Close what you open, in an `after` hook, and let the hang tell you when you didn't.
 
+### 3.5 The opposite failure: `unref()` in the wrong place
+
+Building this module's exercise produced the mirror image, and it's worth recording:
+
+```
+not ok 5 - times out a hung check
+  error: 'Promise resolution is still pending but the event loop has already resolved'
+```
+
+A health check that never settles, raced against a timeout that had been `.unref()`'d. With nothing else scheduled, the loop emptied and the runner reported a test still waiting on a promise that could never resolve.
+
+The rule that falls out: **`unref()` a timer only when something else is keeping the loop alive.** In `drain()` the listening server is that something, so unref is right. In a `Promise.race` against work that may never finish, the timer *is* the only escape — unref it and you have removed the rescue.
+
+That error message means "your test is awaiting something the loop can no longer deliver", and it almost always points at an `unref()` or a promise nobody will settle.
+
 ---
 
 ## 4. Coverage, and what it doesn't measure
@@ -334,6 +349,12 @@ node src/15-testing-deploy/index.ts
 node scripts/test.ts 15
 node scripts/test.ts --solutions 15
 ```
+
+The exercise's own test suite is the module practising what it preaches: it asserts the drain finishes in hundreds of milliseconds rather than seconds, that the in-flight request survives, that a second SIGTERM is a no-op, and that `run()` never rejects.
+
+---
+
+That's the last module. `../../README.md` has the full roadmap, the measurements this project collected, and where to go from here.
 
 ---
 

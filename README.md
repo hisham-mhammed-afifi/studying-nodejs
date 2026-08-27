@@ -49,7 +49,7 @@ node scripts/test.ts --solutions 02
 | 07 | Errors, diagnostics, `AsyncLocalStorage` | ✅ ready |
 | 08 | Child processes, worker threads, `cluster` | ✅ ready |
 
-**Part 1 is complete.** Eight modules, 48 runnable demos, 309 tests.
+**Part 1 is complete.** Eight modules, 46 runnable demos.
 
 ### Part 2 — Backend service
 
@@ -61,7 +61,33 @@ node scripts/test.ts --solutions 02
 | 12 | Config, validation & structured logging | ✅ ready |
 | 13 | Persistence with `node:sqlite` | ✅ ready |
 | 14 | Auth: sessions vs JWT, hashing, timing safety | ✅ ready |
-| 15 | Testing with `node:test`, graceful shutdown, deployment | ⬜ next |
+| 15 | Testing with `node:test`, graceful shutdown, deployment | ✅ ready |
+
+**Part 2 is complete.** Seven modules, 42 more demos.
+
+**The whole project is complete: 15 modules, 88 runnable demos, 564 tests.**
+
+## A few things this project measured
+
+Not repeated from documentation — run in `_probe` files and kept only when the number survived:
+
+| | |
+|---|---|
+| `scrypt` vs `sha256` | **~19,000× slower** — the entire argument for password hashing (14 §1) |
+| Graceful shutdown | **6814ms → 811ms** with a sweep, and the in-flight request still completes (15 §5) |
+| SQLite transactions | **35.3s → 11ms** for 50k inserts — 3341× (13 §4) |
+| ReDoS | a 28-character input stalling the loop for **1261ms** (12 §4) |
+| Log redaction | a naive redactor leaked **7 of 9** planted secrets (12 §5) |
+| The timing attack people fix | `Buffer.equals` leaks **1.12×** over 400k samples (14 §2) |
+| The one they don't | skipping the hash for an unknown user leaks **thousands of ×** (14 §2) |
+
+And several pieces of received wisdom that did **not** survive:
+
+- "Compose middleware once at startup" — worth ~5%, hygiene rather than performance (10)
+- `fast-json-stringify` was **slower** than `JSON.stringify` on wide objects, 0.74× (11)
+- N+1 queries in in-process SQLite cost only 1.3× — the problem is the round trip, not the query count (13)
+- `requestTimeout` does not bound a slow *handler*; only `server.setTimeout()` does (09 §5)
+- `res instanceof stream.Writable` is `false` — `ServerResponse` extends `OutgoingMessage` (09)
 
 ## How each module is laid out
 
@@ -76,3 +102,15 @@ src/NN-topic/
 ```
 
 **Suggested loop per module:** read the README → *predict* each demo's output before running → run it → do the exercise → compare with the solution.
+
+## Where to go next
+
+The project deliberately stops at the edge of Node itself. The obvious continuations, roughly in order of how often they come up:
+
+- **Observability** — OpenTelemetry tracing on top of module 07's `AsyncLocalStorage` context and module 12's structured logs
+- **A real database** — `pg` or `mysql2`, where connection pools, network round trips, and N+1 actually hurt (module 13's SQLite hides all three)
+- **Queues and background work** — the jobs that shouldn't happen inside a request
+- **Caching** — Redis, and the invalidation problem that comes with it
+- **WebSockets / SSE** — long-lived connections, which change every assumption in module 15's shutdown
+
+Each of those builds on something here rather than replacing it.

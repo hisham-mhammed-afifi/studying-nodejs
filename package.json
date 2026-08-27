@@ -24,7 +24,8 @@
     "m11": "node src/11-fastify/index.ts",
     "m12": "node src/12-config-logging/index.ts",
     "m13": "node src/13-persistence/index.ts",
-    "m14": "node src/14-auth/index.ts"
+    "m14": "node src/14-auth/index.ts",
+    "m15": "node src/15-testing-deploy/index.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
